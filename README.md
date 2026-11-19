@@ -53,7 +53,7 @@ python3 -m pip install websocket-client
 codex app-server daemon start
 ```
 
-Reading history needs no extra dependencies. Messaging a Claude Code session requires that session to be running and the directory to be trusted.
+Reading history needs no extra dependencies.
 
 ## Commands
 
@@ -69,28 +69,12 @@ Reading history needs no extra dependencies. Messaging a Claude Code session req
 
 See [SKILL.md](SKILL.md) for full semantics (receipts, statuses, ownership rules).
 
-## vs. the official Codex plugin for Claude Code
-
-| | Codex plugin | agent-relay |
-|---|---|---|
-| Session lifetime | Tied to the current Claude session | Independent, persistent, resumable from either side |
-| Direction | Claude → Codex only | Both directions |
-| Interaction | One-shot task, output returned | Multi-turn, request IDs with delivery receipts |
-| Shared context | Prompt only | Either side can read the other's full transcript |
-| Built-in review gate | Yes | No (ask for a review in the task) |
-
-## Privacy
-
-The relay itself is local: it talks to the agents over local Unix sockets and the CLIs, and sends nothing anywhere. The agents still send their prompts — including anything relayed to them — to their model providers as usual.
-
-Request receipts in `~/.local/state/agent-relay/` (`0700` directory, `0600` files) keep the full message text and answers and are never pruned automatically; delete them when no longer needed. Source session logs are never modified.
-
 ## Known limits
 
 - Created sessions run with full permissions by default (Codex `danger-full-access` + no approvals, Claude Code `bypassPermissions`), since nobody is there to answer prompts. Tighten with `create codex --sandbox read-only` or `create cc --permission-mode plan`.
-- Claude Code background sessions have no inbox. Follow-up `send`s stop the idle session and continue it with `claude --bg --resume`, so each follow-up restarts that process.
 - Claude Code sessions must run in a directory Claude already trusts.
 - `cancel` works for Codex only; Claude Code exposes no turn interrupt.
+- Request receipts in `~/.local/state/agent-relay/` keep full message text and answers and are never pruned; delete them when no longer needed.
 
 ## 中文说明
 
@@ -103,11 +87,7 @@ Request receipts in `~/.local/state/agent-relay/` (`0700` directory, `0600` file
 - **取消**正在运行的 Codex 任务
 - **跨两个产品搜索**历史会话
 
-**不需要绕过安全限制**：只走两个产品的官方接口（Codex app-server daemon、Claude Code 后台会话与跨会话收件箱），不会修改任何入站设置。
-
-- **权限由接收方决定**：任务按接收方自己的沙箱和审批配置执行，不会继承发送方的限制。Codex 会话默认显式使用 `danger-full-access` + 免审批（不依赖每个人的 Codex 配置，因为转发的会话没人点审批）；只做 review 时用 `--sandbox read-only` 收紧；Claude Code 会话同理默认 `--permission-mode bypassPermissions`，可用 `--permission-mode` 收紧。回执里会记录实际生效的权限。
-- **消息标注为来自另一个 agent**，而不是来自你；接收方会被要求自行判断，危险或超出任务范围的操作先问你。这是对模型的提示，不是强制隔离。
-- **转发通道在本机**（本地 socket 和 CLI），但两个 agent 照常把提示词发给各自的模型服务。回执会保存消息原文和回答，不会自动清理。
+**默认全权限**：新建的会话默认 Codex `danger-full-access` + 免审批、Claude Code `bypassPermissions`（后台没人点审批）；只做 review 时用 `--sandbox read-only` 或 `--permission-mode plan` 收紧。
 
 **安装**：按上面 [Install](#install) 一节 `git clone` 到 skills 目录，装 `websocket-client` 并启动 `codex app-server daemon start`。之后直接对 agent 说：
 
