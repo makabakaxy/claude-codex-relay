@@ -495,6 +495,7 @@ def send(args):
 
 
 def inspect_request(request, rpc=None):
+    request.pop('detail', None)
     marker = f"[agent-relay done {request['request_id']}]"
     if request['provider'] == 'codex':
         if not request.get('turn_id'):
