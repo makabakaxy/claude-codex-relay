@@ -279,7 +279,10 @@ def create(args):
         save(request)
         if args.sandbox:
             raise RuntimeError('--sandbox is supported for Codex sessions only')
-        argv = ['claude', '--bg', '--name', f'agent-relay-{sid[:8]}']
+        # Explicit, so behavior does not depend on each user's Claude settings; nobody
+        # watches a relayed background session to answer permission prompts.
+        mode = args.permission_mode or 'bypassPermissions'
+        argv = ['claude', '--bg', '--name', f'agent-relay-{sid[:8]}', '--permission-mode', mode]
         if args.model:
             argv += ['--model', args.model]
         argv += [envelope(args.message, request)]
@@ -303,8 +306,10 @@ def create(args):
         request['session_id'] = matches[0]['sessionId']
         request['background_id'] = matches[0].get('id')
         request.update(status='pending', launch_output=output.strip(), cwd=cwd,
-                       model=args.model or 'default', created_by_agent_relay=True)
+                       model=args.model or 'default', permission_mode=mode, created_by_agent_relay=True)
     else:
+        if args.permission_mode:
+            raise RuntimeError('--permission-mode is supported for Claude Code sessions only')
         with RPC() as rpc:
             # Explicit, so behavior does not depend on each user's Codex config. Approval is
             # 'never' because nobody watches a relayed session to answer approval prompts.
@@ -380,6 +385,8 @@ def resume_background_cc(sid, live, message, request):
         if pid_alive(live['pid']):
             raise RuntimeError('Background CC session did not stop; not resuming to avoid starting a copy')
     cwd = (live or {}).get('cwd') or origin.get('cwd')
+    # No extra flags: a background session keeps its saved options (model, permission mode),
+    # and passing any flag makes Claude start a copy instead of continuing it.
     output = run(['claude', '--bg', '--resume', sid, message], timeout=60, cwd=cwd)
     launched = re.search(r'backgrounded\s*\S\s*([0-9a-f]{8})', output)
     if not launched or launched.group(1) != sid[:8]:
@@ -590,6 +597,8 @@ def main(argv=None):
     new.add_argument('--cwd', default=os.getcwd())
     new.add_argument('--sandbox', choices=['read-only', 'workspace-write', 'danger-full-access'],
                      help='Codex sandbox (default danger-full-access, approvals never)')
+    new.add_argument('--permission-mode', choices=['bypassPermissions', 'acceptEdits', 'auto', 'dontAsk', 'plan', 'manual'],
+                     help='Claude Code permission mode (default bypassPermissions)')
     msg = commands.add_parser('send', help='Send once and wait for the answer by default')
     msg.add_argument('session_id')
     msg.add_argument('message')

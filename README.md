@@ -31,7 +31,7 @@ It does **not** bypass any sandbox or approval. It only uses each product's offi
 
 What this does and does not guarantee:
 
-- **Permissions belong to the receiver.** A delegated task runs with the receiving agent's own sandbox and approval settings, not the sender's. Codex sessions are created with an explicit `danger-full-access` sandbox and `never` approvals, independent of your Codex config, because a relayed session has nobody to answer approval prompts and often needs to reach other agents. Use `create codex --sandbox read-only` (or `workspace-write`) for review-only work; the receipt records the effective `sandbox` and `approval_policy`.
+- **Permissions belong to the receiver.** A delegated task runs with the receiving agent's own sandbox and approval settings, not the sender's. Codex sessions are created with an explicit `danger-full-access` sandbox and `never` approvals, independent of your Codex config, because a relayed session has nobody to answer approval prompts and often needs to reach other agents. Use `create codex --sandbox read-only` (or `workspace-write`) for review-only work; the receipt records the effective `sandbox` and `approval_policy`. Claude Code sessions are likewise created with an explicit `--permission-mode bypassPermissions` (override with `create cc --permission-mode acceptEdits|plan|...`); if your organization disables bypass mode, creation fails with Claude's error instead of silently downgrading.
 - **Messages are labeled as coming from a peer agent**, not from you. The receiver is told to apply its own judgment and ask you before destructive or out-of-scope actions. That is an instruction to the model, not an enforcement boundary — a compromised sender can still send a malicious request, so keep sensitive sessions on restrictive settings.
 - **Inbound settings are not changed.** agent-relay never turns on auto-accept for cross-session messages.
 
@@ -75,7 +75,7 @@ Reading history needs no extra dependencies. Messaging a Claude Code session req
 | `list [cc\|codex\|all] [--project P] [--query Q] [--since/--until]` | Search sessions |
 | `get <id> [--around TEXT] [--tools] [--all]` | Read a session as Markdown |
 | `models [cc\|codex]` | List available models |
-| `create cc\|codex [--model M] [--cwd DIR] [--sandbox MODE] "task"` | Start a persistent session (`--sandbox`: Codex only) |
+| `create cc\|codex [--model M] [--cwd DIR] [--sandbox MODE \| --permission-mode MODE] "task"` | Start a persistent session (`--sandbox`: Codex, `--permission-mode`: Claude Code) |
 | `send <session-id> "msg" [--no-wait] [--timeout S]` | Message an existing session |
 | `wait <request-id> [--timeout S]` | Wait for an answer without resending |
 | `cancel <request-id>` | Interrupt the running Codex turn |
@@ -117,7 +117,7 @@ Request receipts in `~/.local/state/agent-relay/` (`0700` directory, `0600` file
 
 **不需要绕过安全限制**：只走两个产品的官方接口（Codex app-server daemon、Claude Code 后台会话与跨会话收件箱），不会修改任何入站设置。
 
-- **权限由接收方决定**：任务按接收方自己的沙箱和审批配置执行，不会继承发送方的限制。Codex 会话默认显式使用 `danger-full-access` + 免审批（不依赖每个人的 Codex 配置，因为转发的会话没人点审批）；只做 review 时用 `--sandbox read-only` 收紧，回执里会记录实际生效的权限。
+- **权限由接收方决定**：任务按接收方自己的沙箱和审批配置执行，不会继承发送方的限制。Codex 会话默认显式使用 `danger-full-access` + 免审批（不依赖每个人的 Codex 配置，因为转发的会话没人点审批）；只做 review 时用 `--sandbox read-only` 收紧；Claude Code 会话同理默认 `--permission-mode bypassPermissions`，可用 `--permission-mode` 收紧。回执里会记录实际生效的权限。
 - **消息标注为来自另一个 agent**，而不是来自你；接收方会被要求自行判断，危险或超出任务范围的操作先问你。这是对模型的提示，不是强制隔离。
 - **转发通道在本机**（本地 socket 和 CLI），但两个 agent 照常把提示词发给各自的模型服务。回执会保存消息原文和回答，不会自动清理。
 
