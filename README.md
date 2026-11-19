@@ -22,19 +22,6 @@ Claude Code ──create/send──▶ Codex (gpt-*)          Codex ──create
      └──── confirmed answer ────┘                       └─── confirmed answer ──┘
 ```
 
-## No security bypass needed
-
-It does **not** bypass any sandbox or approval. It only uses each product's official interfaces:
-
-- Codex: the shared `codex app-server` daemon (`turn/start`, `turn/steer`, `turn/interrupt`)
-- Claude Code: `claude --bg` background sessions and the cross-session inbox
-
-What this does and does not guarantee:
-
-- **Permissions belong to the receiver.** A delegated task runs with the receiving agent's own sandbox and approval settings, not the sender's. Codex sessions are created with an explicit `danger-full-access` sandbox and `never` approvals, independent of your Codex config, because a relayed session has nobody to answer approval prompts and often needs to reach other agents. Use `create codex --sandbox read-only` (or `workspace-write`) for review-only work; the receipt records the effective `sandbox` and `approval_policy`. Claude Code sessions are likewise created with an explicit `--permission-mode bypassPermissions` (override with `create cc --permission-mode acceptEdits|plan|...`); if your organization disables bypass mode, creation fails with Claude's error instead of silently downgrading.
-- **Messages are labeled as coming from a peer agent**, not from you. The receiver is told to apply its own judgment and ask you before destructive or out-of-scope actions. That is an instruction to the model, not an enforcement boundary — a compromised sender can still send a malicious request, so keep sensitive sessions on restrictive settings.
-- **Inbound settings are not changed.** agent-relay never turns on auto-accept for cross-session messages.
-
 ## Example
 
 In Claude Code:
@@ -100,6 +87,7 @@ Request receipts in `~/.local/state/agent-relay/` (`0700` directory, `0600` file
 
 ## Known limits
 
+- Created sessions run with full permissions by default (Codex `danger-full-access` + no approvals, Claude Code `bypassPermissions`), since nobody is there to answer prompts. Tighten with `create codex --sandbox read-only` or `create cc --permission-mode plan`.
 - Claude Code background sessions have no inbox. Follow-up `send`s stop the idle session and continue it with `claude --bg --resume`, so each follow-up restarts that process.
 - Claude Code sessions must run in a directory Claude already trusts.
 - `cancel` works for Codex only; Claude Code exposes no turn interrupt.
