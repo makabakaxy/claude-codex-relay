@@ -350,33 +350,43 @@ def pid_alive(pid):
         return True
 
 
-def created_by_relay(sid):
-    for saved in state_dir().glob('*.json'):
-        try:
-            origin = json.loads(saved.read_text())
-        except (OSError, ValueError):
-            continue
-        if origin.get('session_id') == sid and origin.get('created_by_agent_relay'):
-            return origin
+def cc_job(sid):
+    """State of a background CC job, written by Claude under ~/.claude/jobs/<short-id>/."""
+    root = Path(os.environ.get('CLAUDE_CONFIG_DIR', Path.home()/'.claude'))/'jobs'
+    try:
+        state = json.loads((root/sid[:8]/'state.json').read_text())
+    except (OSError, ValueError):
+        return None
+    return state if state.get('sessionId') == sid else None
+
+
+def restart_blocker(job):
+    """Why stopping this idle background session now would lose work, or None if it is safe."""
+    if job.get('tempo') == 'blocked' or job.get('state') == 'blocked':
+        return 'it is waiting for input; answer it with `claude attach`'
+    flight = job.get('inFlight') or {}
+    if flight.get('tasks') or flight.get('queued') or flight.get('drainableMonitors'):
+        return 'it has background tasks or monitors running'
     return None
 
 
 def resume_background_cc(sid, live, message, request):
     """Continue a background CC session, which has no inbox, via `claude --bg --resume`."""
-    origin = created_by_relay(sid)
-    if live and live.get('kind') != 'bg':
-        raise RuntimeError('CC session has no inbox; it may refuse inbound messages')
-    if not live and not origin:
-        raise RuntimeError('CC session is offline. Resume it yourself before sending; '
-                           'agent-relay only resumes background sessions it created.')
+    job = cc_job(sid)
+    if not job:
+        raise RuntimeError('CC session is offline and is not a background session; resume it before sending')
     if live:
         # A session that just answered stays busy for a few seconds while it finishes the turn.
         deadline = time.monotonic() + 30
         while live and live.get('status') != 'idle' and time.monotonic() < deadline:
             time.sleep(1)
             live = cc_live(sid) or live
+            job = cc_job(sid) or job
         if live.get('status') != 'idle':
             raise RuntimeError('Background CC session is busy; wait for it to finish before sending')
+        blocker = restart_blocker(job)
+        if blocker:
+            raise RuntimeError(f'Not restarting the background CC session: {blocker}')
         run(['claude', 'stop', live.get('jobId') or sid[:8]])
         # The registry entry disappears before the process exits; resuming earlier starts a copy.
         deadline = time.monotonic() + 30
@@ -384,10 +394,14 @@ def resume_background_cc(sid, live, message, request):
             time.sleep(0.5)
         if pid_alive(live['pid']):
             raise RuntimeError('Background CC session did not stop; not resuming to avoid starting a copy')
-    cwd = (live or {}).get('cwd') or origin.get('cwd')
+    cwd = (live or {}).get('cwd') or job.get('cwd')
     # No extra flags: a background session keeps its saved options (model, permission mode),
     # and passing any flag makes Claude start a copy instead of continuing it.
-    output = run(['claude', '--bg', '--resume', sid, message], timeout=60, cwd=cwd)
+    try:
+        output = run(['claude', '--bg', '--resume', sid, message], timeout=60, cwd=cwd)
+    except Exception as error:
+        raise RuntimeError(f'Resume failed after stopping the session ({error}). '
+                           f'Restore it with: cd {cwd} && claude --bg --resume {sid}') from error
     launched = re.search(r'backgrounded\s*\S\s*([0-9a-f]{8})', output)
     if not launched or launched.group(1) != sid[:8]:
         if launched:
@@ -414,7 +428,9 @@ def send(args):
     try:
         if provider == 'cc':
             live = cc_live(sid)
-            if not (live and live.get('messagingSocketPath')):
+            # Background sessions are continued with `--bg --resume`: nobody is attached to
+            # approve inbox messages there, so the inbox would leave them waiting forever.
+            if not live or live.get('kind') == 'bg':
                 attempted = True
                 resume_background_cc(sid, live, message, request)
                 save(request)
@@ -423,6 +439,8 @@ def send(args):
                     return 0
                 print(f"Request: {request['request_id']}", file=sys.stderr, flush=True)
                 return wait(request, args.timeout)
+            if not live.get('messagingSocketPath'):
+                raise RuntimeError('CC session has no inbox; it may refuse inbound messages')
             request['receiver_pid'] = live['pid']
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
                 connection.settimeout(5)
