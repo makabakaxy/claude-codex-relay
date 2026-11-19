@@ -1,0 +1,4 @@
+interface:
+  display_name: "Agent Relay"
+  short_description: "Read, create, and message local agent sessions"
+  default_prompt: "Use $agent-relay to find a Codex or Claude Code session, read its context, or send it a question when requested."
