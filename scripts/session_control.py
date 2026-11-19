@@ -306,9 +306,9 @@ def create(args):
                        model=args.model or 'default', created_by_agent_relay=True)
     else:
         with RPC() as rpc:
-            params = {'cwd': cwd}
-            if args.sandbox:
-                params['sandbox'] = args.sandbox
+            # Explicit, so behavior does not depend on each user's Codex config. Approval is
+            # 'never' because nobody watches a relayed session to answer approval prompts.
+            params = {'cwd': cwd, 'sandbox': args.sandbox or 'danger-full-access', 'approvalPolicy': 'never'}
             if args.model:
                 params['model'] = args.model
             result = rpc.call('thread/start', params)
@@ -317,6 +317,8 @@ def create(args):
             request.update(cwd=cwd, model=result.get('model', args.model or 'default'),
                            sandbox=(result.get('sandbox') or {}).get('type'),
                            approval_policy=result.get('approvalPolicy'),
+                           requested_permissions={'sandbox': params['sandbox'],
+                                                  'approvalPolicy': params['approvalPolicy']},
                            created_by_agent_relay=True, runtime_socket=rpc.socket_path)
             save(request)
             try:
@@ -441,7 +443,7 @@ def send(args):
                     if not owned:
                         raise RuntimeError('Codex session is not loaded in the shared daemon. '
                                            'Use its owning desktop chat tools or resume it there first.')
-                    rpc.call('thread/resume', {'threadId': sid})
+                    rpc.call('thread/resume', {'threadId': sid, **origin.get('requested_permissions', {})})
                 thread = rpc.call('thread/read', {'threadId': sid, 'includeTurns': True})['thread']
                 active = [t for t in thread.get('turns', []) if t.get('status') == 'inProgress']
                 attempted = True
@@ -587,7 +589,7 @@ def main(argv=None):
     new.add_argument('--model')
     new.add_argument('--cwd', default=os.getcwd())
     new.add_argument('--sandbox', choices=['read-only', 'workspace-write', 'danger-full-access'],
-                     help='Codex only: override the sandbox; default is the receiver configuration')
+                     help='Codex sandbox (default danger-full-access, approvals never)')
     msg = commands.add_parser('send', help='Send once and wait for the answer by default')
     msg.add_argument('session_id')
     msg.add_argument('message')
